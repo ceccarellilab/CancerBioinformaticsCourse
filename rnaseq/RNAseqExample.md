@@ -774,3 +774,52 @@ Draw a *Volcano Plot*, it is a scatterplot with the fold change on the
 try to color the DEGs in red and the other in gray as follows:
 
 ![](RNAseqExample_files/figure-gfm/unnamed-chunk-39-1.png)<!-- -->
+
+## Anova + Heatmap
+
+``` r
+### anova and heatmap
+d_lrt   <- DESeq(d, test = "LRT", reduced = ~ 1)
+res_lrt <- results(d_lrt, alpha = 0.05)
+summary(res_lrt)
+library(pheatmap)
+
+# top variable genes by LRT significance
+res_lrt_df <- as.data.frame(res_lrt)
+res_lrt_df$gene_id <- rownames(res_lrt)                  # versioned ENSEMBL, matches vst rownames
+res_lrt_df$ENSEMBL <- sub("\\..*$", "", res_lrt_df$gene_id)
+
+top_genes <- res_lrt_df %>%
+  filter(!is.na(padj)) %>%
+  arrange(padj) %>%
+  slice_head(n = 50)                                     # or filter(padj < 1e-10) etc.
+
+# VST matrix for those genes (gene_id matches assay(vst) rownames exactly)
+mat <- assay(vst)[top_genes$gene_id, ]
+
+# readable row labels: ENSEMBL -> SYMBOL, deduped 1:1, NA falls back to ENSEMBL
+sym <- bitr(top_genes$ENSEMBL, fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = org.Hs.eg.db)
+sym <- sym[!duplicated(sym$ENSEMBL), ]
+lab <- left_join(top_genes["ENSEMBL"], sym, by = "ENSEMBL")$SYMBOL
+lab[is.na(lab)] <- top_genes$ENSEMBL[is.na(lab)]
+rownames(mat) <- make.unique(lab)
+
+# column annotation + colors matched to your survival palette
+ann_col <- data.frame(Subtype = vst$subtype, row.names = colnames(mat))
+ann_colors <- list(
+  Subtype = setNames(c("darkred", "darkgreen", "steelblue"), levels(coldata$subtype))
+)
+
+pheatmap(
+  mat,
+  scale                    = "row",                      # z-score per gene
+  annotation_col           = ann_col,
+  annotation_colors        = ann_colors,
+  show_colnames            = FALSE,
+  clustering_distance_rows = "correlation",
+  clustering_distance_cols = "correlation",
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(50),
+  main  = "Top 50 subtype-variable genes (LRT)"
+)
+```
+
